@@ -1,0 +1,6 @@
+# Built app bundle — regenerate any time with ./build.sh
+Deep Work.app/
+
+# macOS
+.DS_Store
+*.o

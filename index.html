@@ -1,0 +1,338 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Session</title>
+<style>
+  @font-face {
+    font-family: "Lato";
+    src: url("fonts/Lato-Light.ttf") format("truetype");
+    font-weight: 300;
+  }
+  @font-face {
+    font-family: "Lato";
+    src: url("fonts/Lato-Regular.ttf") format("truetype");
+    font-weight: 400;
+  }
+  @font-face {
+    font-family: "Lato";
+    src: url("fonts/Lato-Bold.ttf") format("truetype");
+    font-weight: 700;
+  }
+
+  :root {
+    --bg: #faf9f6;
+    --ink: #1a1a1a;
+    --faint: #b9b6ad;
+    --line: #e8e5dc;
+  }
+
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+
+  html, body {
+    height: 100%;
+    background: var(--bg);
+    color: var(--ink);
+    font-family: "Lato", -apple-system, sans-serif;
+    -webkit-font-smoothing: antialiased;
+  }
+
+  body {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    cursor: default;
+    overflow: hidden;
+  }
+
+  .wrap {
+    width: 100%;
+    max-width: 600px;
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    padding: 9vh 24px 0;
+    overflow-y: auto;
+  }
+  .wrap::-webkit-scrollbar { display: none; }
+
+  /* Session intention */
+  .intention {
+    width: 100%;
+    border: none;
+    outline: none;
+    background: transparent;
+    color: var(--ink);
+    font-family: inherit;
+    font-weight: 300;
+    font-size: 30px;
+    line-height: 1.35;
+    resize: none;
+    overflow: hidden;
+    margin-bottom: 34px;
+  }
+  .intention::placeholder { color: var(--faint); }
+
+  /* Targets */
+  ul { list-style: none; }
+
+  li {
+    display: flex;
+    align-items: flex-start;
+    gap: 14px;
+    padding: 9px 0;
+    font-size: 19px;
+    font-weight: 400;
+    line-height: 1.5;
+  }
+
+  .dot {
+    flex: 0 0 auto;
+    width: 17px;
+    height: 17px;
+    margin-top: 6px;
+    border: 1.5px solid var(--faint);
+    border-radius: 50%;
+    cursor: pointer;
+    transition: all .15s ease;
+  }
+  .dot:hover { border-color: var(--ink); }
+
+  li.done .dot {
+    background: var(--ink);
+    border-color: var(--ink);
+  }
+  li.done .text {
+    color: var(--faint);
+    text-decoration: line-through;
+    text-decoration-color: var(--faint);
+  }
+
+  .text {
+    flex: 1;
+    border: none;
+    outline: none;
+    background: transparent;
+    color: var(--ink);
+    font-family: inherit;
+    font-size: inherit;
+    font-weight: inherit;
+    line-height: inherit;
+    resize: none;
+    overflow: hidden;
+  }
+  .text::placeholder { color: var(--faint); }
+
+  .add {
+    margin-top: 6px;
+    margin-left: 31px;
+    font-size: 19px;
+    color: var(--faint);
+    background: none;
+    border: none;
+    font-family: inherit;
+    cursor: pointer;
+    padding: 9px 0;
+  }
+  .add:hover { color: var(--ink); }
+
+  /* Bottom bar */
+  .bar {
+    flex: 0 0 auto;
+    width: 100%;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    gap: 26px;
+    padding: 18px 0 22px;
+    font-size: 14px;
+    color: var(--faint);
+    opacity: 0;
+    transition: opacity .4s ease;
+  }
+  body:hover .bar { opacity: 1; }
+
+  .bar button {
+    background: none;
+    border: none;
+    font-family: inherit;
+    font-size: 14px;
+    color: var(--faint);
+    cursor: pointer;
+    letter-spacing: .2px;
+  }
+  .bar button:hover { color: var(--ink); }
+
+  #timer.running { color: var(--ink); }
+
+  .sep { color: var(--line); }
+</style>
+</head>
+<body>
+  <div class="wrap">
+    <textarea class="intention" id="intention" rows="1" placeholder="What's the one thing this session is for?"></textarea>
+    <ul id="list"></ul>
+    <button class="add" id="add">+ target</button>
+  </div>
+
+  <div class="bar">
+    <button id="timer">25:00</button>
+    <span class="sep">·</span>
+    <button id="reset">clear done</button>
+    <span class="sep">·</span>
+    <button id="wipe">new session</button>
+  </div>
+
+<script>
+  const KEY = "deepwork.session.v1";
+  const listEl = document.getElementById("list");
+  const intentionEl = document.getElementById("intention");
+
+  let state = load();
+
+  function load() {
+    try { return JSON.parse(localStorage.getItem(KEY)) || blank(); }
+    catch { return blank(); }
+  }
+  function blank() { return { intention: "", targets: [], timerMin: 25 }; }
+  function save() { localStorage.setItem(KEY, JSON.stringify(state)); }
+
+  // ---- intention ----
+  intentionEl.value = state.intention;
+  autoGrow(intentionEl);
+  intentionEl.addEventListener("input", () => {
+    state.intention = intentionEl.value;
+    autoGrow(intentionEl);
+    save();
+  });
+
+  function autoGrow(el) {
+    el.style.height = "auto";
+    el.style.height = el.scrollHeight + "px";
+  }
+
+  // ---- targets ----
+  function render() {
+    listEl.innerHTML = "";
+    state.targets.forEach((t, i) => {
+      const li = document.createElement("li");
+      if (t.done) li.classList.add("done");
+
+      const dot = document.createElement("div");
+      dot.className = "dot";
+      dot.addEventListener("click", () => {
+        state.targets[i].done = !state.targets[i].done;
+        save(); render();
+      });
+
+      const ta = document.createElement("textarea");
+      ta.className = "text";
+      ta.rows = 1;
+      ta.value = t.text;
+      ta.placeholder = "a concrete target…";
+      ta.addEventListener("input", () => {
+        state.targets[i].text = ta.value;
+        autoGrow(ta); save();
+      });
+      ta.addEventListener("keydown", (e) => {
+        if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); addTarget(); }
+        if (e.key === "Backspace" && ta.value === "" && state.targets.length > 1) {
+          e.preventDefault();
+          state.targets.splice(i, 1); save(); render();
+          focusTarget(Math.max(0, i - 1));
+        }
+      });
+
+      li.appendChild(dot);
+      li.appendChild(ta);
+      listEl.appendChild(li);
+      autoGrow(ta);
+    });
+  }
+
+  function addTarget() {
+    state.targets.push({ text: "", done: false });
+    save(); render();
+    focusTarget(state.targets.length - 1);
+  }
+
+  function focusTarget(i) {
+    const items = listEl.querySelectorAll(".text");
+    if (items[i]) { items[i].focus(); }
+  }
+
+  document.getElementById("add").addEventListener("click", addTarget);
+
+  document.getElementById("reset").addEventListener("click", () => {
+    state.targets = state.targets.filter(t => !t.done);
+    save(); render();
+  });
+
+  document.getElementById("wipe").addEventListener("click", () => {
+    state = blank();
+    intentionEl.value = "";
+    autoGrow(intentionEl);
+    save(); render();
+    intentionEl.focus();
+  });
+
+  // ---- timer ----
+  const timerBtn = document.getElementById("timer");
+  let remaining = (state.timerMin || 25) * 60;
+  let tick = null;
+
+  function fmt(s) {
+    const m = Math.floor(s / 60), ss = s % 60;
+    return m + ":" + String(ss).padStart(2, "0");
+  }
+  function paint() { timerBtn.textContent = fmt(remaining); }
+
+  timerBtn.addEventListener("click", () => {
+    if (tick) { stopTimer(); return; }
+    if (remaining <= 0) remaining = (state.timerMin || 25) * 60;
+    timerBtn.classList.add("running");
+    tick = setInterval(() => {
+      remaining--;
+      paint();
+      if (remaining <= 0) { stopTimer(); chime(); }
+    }, 1000);
+  });
+
+  // right-click timer to reset / change length
+  timerBtn.addEventListener("contextmenu", (e) => {
+    e.preventDefault();
+    const v = prompt("Session length (minutes):", state.timerMin || 25);
+    const n = parseInt(v, 10);
+    if (n > 0) { state.timerMin = n; remaining = n * 60; save(); }
+    stopTimer();
+  });
+
+  function stopTimer() {
+    clearInterval(tick); tick = null;
+    timerBtn.classList.remove("running");
+    paint();
+  }
+
+  function chime() {
+    try {
+      const ctx = new (window.AudioContext || window.webkitAudioContext)();
+      const o = ctx.createOscillator(), g = ctx.createGain();
+      o.connect(g); g.connect(ctx.destination);
+      o.frequency.value = 440; o.type = "sine";
+      g.gain.setValueAtTime(0.0001, ctx.currentTime);
+      g.gain.exponentialRampToValueAtTime(0.2, ctx.currentTime + 0.05);
+      g.gain.exponentialRampToValueAtTime(0.0001, ctx.currentTime + 1.2);
+      o.start(); o.stop(ctx.currentTime + 1.2);
+    } catch (e) {}
+  }
+
+  paint();
+
+  // ---- init ----
+  if (state.targets.length === 0) state.targets.push({ text: "", done: false });
+  render();
+  if (!state.intention) intentionEl.focus();
+</script>
+</body>
+</html>
