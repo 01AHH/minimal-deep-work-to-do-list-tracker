@@ -1,6 +1,10 @@
 # Built app bundle — regenerate any time with ./build.sh
 Deep Work.app/
 
+# Generated icon artifacts — rebuilt from gen_icon.swift by ./build.sh
+AppIcon.icns
+AppIcon.iconset/
+
 # macOS
 .DS_Store
 *.o
