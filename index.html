@@ -57,6 +57,33 @@
   }
   .wrap::-webkit-scrollbar { display: none; }
 
+  /* Tabs */
+  .tabs {
+    display: flex;
+    gap: 22px;
+    margin-bottom: 38px;
+  }
+  .tab {
+    background: none;
+    border: none;
+    font-family: inherit;
+    font-size: 15px;
+    font-weight: 400;
+    letter-spacing: .3px;
+    color: var(--faint);
+    cursor: pointer;
+    padding: 0 0 5px;
+    border-bottom: 1.5px solid transparent;
+    transition: color .15s ease, border-color .15s ease;
+  }
+  .tab:hover { color: var(--ink); }
+  .tab.active {
+    color: var(--ink);
+    border-bottom-color: var(--ink);
+  }
+
+  .view[hidden] { display: none; }
+
   /* Session intention */
   .intention {
     width: 100%;
@@ -74,7 +101,7 @@
   }
   .intention::placeholder { color: var(--faint); }
 
-  /* Targets */
+  /* Targets / task rows */
   ul { list-style: none; }
 
   li {
@@ -137,6 +164,104 @@
   }
   .add:hover { color: var(--ink); }
 
+  /* Jog: section headers */
+  .section-head {
+    margin: 8px 0 4px;
+    font-size: 13px;
+    font-weight: 700;
+    letter-spacing: 1.2px;
+    text-transform: uppercase;
+    color: var(--faint);
+  }
+  .section-head.spaced { margin-top: 44px; }
+
+  /* Jog: projects */
+  .project { margin-bottom: 2px; }
+
+  .project-head {
+    display: flex;
+    align-items: flex-start;
+    gap: 12px;
+    padding: 9px 0;
+  }
+
+  .caret {
+    flex: 0 0 auto;
+    width: 17px;
+    margin-top: 8px;
+    background: none;
+    border: none;
+    font-family: inherit;
+    font-size: 13px;
+    color: var(--faint);
+    cursor: pointer;
+    line-height: 1;
+    transition: transform .15s ease, color .15s ease;
+  }
+  .caret:hover { color: var(--ink); }
+  .project.collapsed .caret { transform: rotate(-90deg); }
+  .caret.spacer { visibility: hidden; cursor: default; }
+
+  .project-name {
+    flex: 1;
+    border: none;
+    outline: none;
+    background: transparent;
+    color: var(--ink);
+    font-family: inherit;
+    font-weight: 400;
+    font-size: 21px;
+    line-height: 1.4;
+    resize: none;
+    overflow: hidden;
+  }
+  .project-name::placeholder { color: var(--faint); }
+  .project.done .project-name {
+    color: var(--faint);
+    text-decoration: line-through;
+    text-decoration-color: var(--faint);
+  }
+
+  .count {
+    flex: 0 0 auto;
+    margin-top: 8px;
+    font-size: 14px;
+    color: var(--faint);
+    letter-spacing: .3px;
+  }
+
+  .project-note {
+    margin-left: 58px;
+    width: calc(100% - 58px);
+    border: none;
+    outline: none;
+    background: transparent;
+    color: var(--faint);
+    font-family: inherit;
+    font-size: 14px;
+    line-height: 1.45;
+    resize: none;
+    overflow: hidden;
+    padding-bottom: 3px;
+  }
+  .project-note::placeholder { color: var(--line); }
+
+  .tasks { margin-left: 58px; }
+  .tasks li { font-size: 17px; padding: 7px 0; }
+  .tasks .dot { width: 15px; height: 15px; margin-top: 5px; }
+
+  .task-add {
+    margin-left: 58px;
+    font-size: 17px;
+    padding: 6px 0;
+  }
+
+  .project.collapsed .project-note,
+  .project.collapsed .tasks,
+  .project.collapsed .task-add { display: none; }
+
+  .project-add { margin-left: 29px; }
+
   /* Bottom bar */
   .bar {
     flex: 0 0 auto;
@@ -152,6 +277,7 @@
     transition: opacity .4s ease;
   }
   body:hover .bar { opacity: 1; }
+  body.jog-active .bar { display: none; }
 
   .bar button {
     background: none;
@@ -171,9 +297,26 @@
 </head>
 <body>
   <div class="wrap">
-    <textarea class="intention" id="intention" rows="1" placeholder="What's the one thing this session is for?"></textarea>
-    <ul id="list"></ul>
-    <button class="add" id="add">+ target</button>
+    <div class="tabs">
+      <button class="tab active" data-tab="session">deep work</button>
+      <button class="tab" data-tab="jog">jog</button>
+    </div>
+
+    <!-- Deep work session -->
+    <div class="view" id="view-session">
+      <textarea class="intention" id="intention" rows="1" placeholder="What's the one thing this session is for?"></textarea>
+      <ul id="list"></ul>
+      <button class="add" id="add">+ target</button>
+    </div>
+
+    <!-- Jog planning -->
+    <div class="view" id="view-jog" hidden>
+      <div id="groups"></div>
+
+      <div class="section-head spaced">Small tasks</div>
+      <ul id="smallList"></ul>
+      <button class="add" id="addSmall">+ small task</button>
+    </div>
   </div>
 
   <div class="bar">
@@ -188,31 +331,78 @@
   const KEY = "deepwork.session.v1";
   const listEl = document.getElementById("list");
   const intentionEl = document.getElementById("intention");
+  const groupsEl = document.getElementById("groups");
+  const smallListEl = document.getElementById("smallList");
+
+  // One-time seed of the jog board. Applied only when state.seeded is false.
+  const ROI = "ROI measure: Support sales team cycle, reducing time to convert by helping them not have to spend as much time explaining the product";
+  const SEED_GROUPS = [
+    {
+      title: "Main projects",
+      projects: [
+        { name: "Finish website", note: ROI, collapsed: false, done: false,
+          tasks: [ { text: "Get GA tracking setup", done: false } ] },
+        { name: "Finish video", note: ROI, collapsed: false, done: false, tasks: [] },
+        { name: "State of the market report planning", note: "", collapsed: false, done: false, tasks: [] }
+      ]
+    },
+    {
+      title: "Small projects / BAU",
+      projects: [
+        { name: "Get Hubspot tracking setup", note: "", collapsed: false, done: false, tasks: [] },
+        { name: "Work with Andy on getting case studies & testimonials automation setup", note: "", collapsed: false, done: false, tasks: [] },
+        { name: "Marketing work (LinkedIn posts)", note: "", collapsed: false, done: false, tasks: [
+          { text: "AIRA conferences pics from Ben & Kev", done: false },
+          { text: "Follow up on previous LinkedIn posts", done: false },
+          { text: "Email product updates from Ben — July 1, 2026", done: false },
+          { text: "Monthly product / updates", done: false }
+        ] },
+        { name: "Get on top of community events", note: "June 25, 2026", collapsed: false, done: false, tasks: [] },
+        { name: "Content re-purposing from Ben's Sat series", note: "", collapsed: false, done: false, tasks: [] },
+        { name: "LinkedIn posts | ads | Marketing assets", note: "", collapsed: false, done: true, tasks: [] }
+      ]
+    }
+  ];
 
   let state = load();
+  let pendingFocus = null;
 
+  function blank() {
+    return { intention: "", targets: [], timerMin: 25, jogGroups: [], smallTasks: [], tab: "session", seeded: false };
+  }
   function load() {
-    try { return JSON.parse(localStorage.getItem(KEY)) || blank(); }
+    try { return { ...blank(), ...(JSON.parse(localStorage.getItem(KEY)) || {}) }; }
     catch { return blank(); }
   }
-  function blank() { return { intention: "", targets: [], timerMin: 25 }; }
   function save() { localStorage.setItem(KEY, JSON.stringify(state)); }
-
-  // ---- intention ----
-  intentionEl.value = state.intention;
-  autoGrow(intentionEl);
-  intentionEl.addEventListener("input", () => {
-    state.intention = intentionEl.value;
-    autoGrow(intentionEl);
-    save();
-  });
 
   function autoGrow(el) {
     el.style.height = "auto";
     el.style.height = el.scrollHeight + "px";
   }
 
-  // ---- targets ----
+  // ---- tabs ----
+  function setTab(name) {
+    state.tab = name;
+    save();
+    document.querySelectorAll(".tab").forEach(b =>
+      b.classList.toggle("active", b.dataset.tab === name));
+    document.getElementById("view-session").hidden = name !== "session";
+    document.getElementById("view-jog").hidden = name !== "jog";
+    document.body.classList.toggle("jog-active", name === "jog");
+  }
+  document.querySelectorAll(".tab").forEach(b =>
+    b.addEventListener("click", () => setTab(b.dataset.tab)));
+
+  // ---- deep work: intention ----
+  intentionEl.value = state.intention;
+  intentionEl.addEventListener("input", () => {
+    state.intention = intentionEl.value;
+    autoGrow(intentionEl);
+    save();
+  });
+
+  // ---- deep work: targets ----
   function render() {
     listEl.innerHTML = "";
     state.targets.forEach((t, i) => {
@@ -256,26 +446,210 @@
     save(); render();
     focusTarget(state.targets.length - 1);
   }
-
   function focusTarget(i) {
     const items = listEl.querySelectorAll(".text");
-    if (items[i]) { items[i].focus(); }
+    if (items[i]) items[i].focus();
   }
-
   document.getElementById("add").addEventListener("click", addTarget);
 
-  document.getElementById("reset").addEventListener("click", () => {
-    state.targets = state.targets.filter(t => !t.done);
-    save(); render();
-  });
+  // ---- jog: project groups ----
+  function renderJog() {
+    groupsEl.innerHTML = "";
+    state.jogGroups.forEach((g, gi) => {
+      const head = document.createElement("div");
+      head.className = "section-head" + (gi > 0 ? " spaced" : "");
+      head.textContent = g.title;
+      groupsEl.appendChild(head);
 
-  document.getElementById("wipe").addEventListener("click", () => {
-    state = blank();
-    intentionEl.value = "";
-    autoGrow(intentionEl);
-    save(); render();
-    intentionEl.focus();
-  });
+      g.projects.forEach((p, pi) => groupsEl.appendChild(buildProject(g, gi, p, pi)));
+
+      const addBtn = document.createElement("button");
+      addBtn.className = "add project-add";
+      addBtn.textContent = "+ project";
+      addBtn.addEventListener("click", () => addProject(gi));
+      groupsEl.appendChild(addBtn);
+    });
+
+    // small tasks
+    smallListEl.innerHTML = "";
+    state.smallTasks.forEach((t, i) => {
+      const li = document.createElement("li");
+      if (t.done) li.classList.add("done");
+
+      const dot = document.createElement("div");
+      dot.className = "dot";
+      dot.addEventListener("click", () => {
+        state.smallTasks[i].done = !state.smallTasks[i].done;
+        save(); renderJog();
+      });
+
+      const ta = document.createElement("textarea");
+      ta.className = "text";
+      ta.rows = 1;
+      ta.value = t.text;
+      ta.placeholder = "something quick…";
+      ta.dataset.s = i;
+      ta.addEventListener("input", () => {
+        state.smallTasks[i].text = ta.value;
+        autoGrow(ta); save();
+      });
+      ta.addEventListener("keydown", (e) => {
+        if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); addSmall(); }
+        if (e.key === "Backspace" && ta.value === "" && state.smallTasks.length > 0) {
+          e.preventDefault();
+          state.smallTasks.splice(i, 1); save(); renderJog();
+          focusSmall(Math.max(0, i - 1));
+        }
+      });
+
+      li.appendChild(dot);
+      li.appendChild(ta);
+      smallListEl.appendChild(li);
+      autoGrow(ta);
+    });
+
+    if (pendingFocus) { applyFocus(pendingFocus); pendingFocus = null; }
+  }
+
+  function buildProject(g, gi, p, pi) {
+    const wrap = document.createElement("div");
+    wrap.className = "project" + (p.collapsed ? " collapsed" : "") + (p.done ? " done" : "");
+
+    const head = document.createElement("div");
+    head.className = "project-head";
+
+    const caret = document.createElement("button");
+    if (p.tasks.length) {
+      caret.className = "caret";
+      caret.textContent = "▾";
+      caret.addEventListener("click", () => {
+        p.collapsed = !p.collapsed;
+        save(); renderJog();
+      });
+    } else {
+      caret.className = "caret spacer";
+      caret.textContent = "▾";
+    }
+
+    const dot = document.createElement("div");
+    dot.className = "dot";
+    dot.addEventListener("click", () => {
+      p.done = !p.done;
+      save(); renderJog();
+    });
+
+    const name = document.createElement("textarea");
+    name.className = "project-name";
+    name.rows = 1;
+    name.value = p.name;
+    name.placeholder = "project name";
+    name.dataset.g = gi; name.dataset.p = pi;
+    name.addEventListener("input", () => { p.name = name.value; autoGrow(name); save(); });
+    name.addEventListener("keydown", (e) => {
+      if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); p.collapsed = false; addTask(gi, pi); }
+      if (e.key === "Backspace" && name.value === "" && p.tasks.length === 0) {
+        e.preventDefault();
+        g.projects.splice(pi, 1); save(); renderJog();
+        if (pi > 0) focusProject(gi, pi - 1);
+      }
+    });
+
+    const count = document.createElement("span");
+    count.className = "count";
+    if (p.tasks.length) count.textContent = p.tasks.filter(t => !t.done).length + "/" + p.tasks.length;
+
+    head.appendChild(caret);
+    head.appendChild(dot);
+    head.appendChild(name);
+    head.appendChild(count);
+    wrap.appendChild(head);
+
+    const note = document.createElement("textarea");
+    note.className = "project-note";
+    note.rows = 1;
+    note.value = p.note || "";
+    note.placeholder = "note…";
+    note.dataset.g = gi; note.dataset.p = pi;
+    note.addEventListener("input", () => { p.note = note.value; autoGrow(note); save(); });
+    note.addEventListener("keydown", (e) => {
+      if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); p.collapsed = false; addTask(gi, pi); }
+    });
+    wrap.appendChild(note);
+
+    const tasks = document.createElement("ul");
+    tasks.className = "tasks";
+    p.tasks.forEach((t, ti) => {
+      const li = document.createElement("li");
+      if (t.done) li.classList.add("done");
+
+      const tdot = document.createElement("div");
+      tdot.className = "dot";
+      tdot.addEventListener("click", () => { t.done = !t.done; save(); renderJog(); });
+
+      const ta = document.createElement("textarea");
+      ta.className = "text";
+      ta.rows = 1;
+      ta.value = t.text;
+      ta.placeholder = "a task…";
+      ta.dataset.g = gi; ta.dataset.p = pi; ta.dataset.t = ti;
+      ta.addEventListener("input", () => { t.text = ta.value; autoGrow(ta); save(); });
+      ta.addEventListener("keydown", (e) => {
+        if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); addTask(gi, pi); }
+        if (e.key === "Backspace" && ta.value === "") {
+          e.preventDefault();
+          p.tasks.splice(ti, 1); save(); renderJog();
+          if (ti > 0) focusTask(gi, pi, ti - 1); else focusProject(gi, pi);
+        }
+      });
+
+      li.appendChild(tdot);
+      li.appendChild(ta);
+      tasks.appendChild(li);
+      autoGrow(ta);
+    });
+    wrap.appendChild(tasks);
+
+    const addBtn = document.createElement("button");
+    addBtn.className = "add task-add";
+    addBtn.textContent = "+ task";
+    addBtn.addEventListener("click", () => addTask(gi, pi));
+    wrap.appendChild(addBtn);
+
+    // grow textareas once attached
+    requestAnimationFrame(() => { autoGrow(name); if (note.value) autoGrow(note); });
+    return wrap;
+  }
+
+  function addProject(gi) {
+    state.jogGroups[gi].projects.push({ name: "", note: "", collapsed: false, done: false, tasks: [] });
+    save(); renderJog();
+    focusProject(gi, state.jogGroups[gi].projects.length - 1);
+  }
+  function addTask(gi, pi) {
+    const p = state.jogGroups[gi].projects[pi];
+    p.collapsed = false;
+    p.tasks.push({ text: "", done: false });
+    save(); renderJog();
+    focusTask(gi, pi, p.tasks.length - 1);
+  }
+  function addSmall() {
+    state.smallTasks.push({ text: "", done: false });
+    save(); renderJog();
+    focusSmall(state.smallTasks.length - 1);
+  }
+
+  function focusProject(gi, pi) { applyFocus({ kind: "project", g: gi, p: pi }); }
+  function focusTask(gi, pi, ti) { applyFocus({ kind: "task", g: gi, p: pi, i: ti }); }
+  function focusSmall(i) { applyFocus({ kind: "small", i }); }
+  function applyFocus(f) {
+    let el = null;
+    if (f.kind === "project") el = groupsEl.querySelector('.project-name[data-g="' + f.g + '"][data-p="' + f.p + '"]');
+    else if (f.kind === "task") el = groupsEl.querySelector('.text[data-g="' + f.g + '"][data-p="' + f.p + '"][data-t="' + f.i + '"]');
+    else if (f.kind === "small") el = smallListEl.querySelector('.text[data-s="' + f.i + '"]');
+    if (el) el.focus();
+  }
+
+  document.getElementById("addSmall").addEventListener("click", addSmall);
 
   // ---- timer ----
   const timerBtn = document.getElementById("timer");
@@ -299,7 +673,6 @@
     }, 1000);
   });
 
-  // right-click timer to reset / change length
   timerBtn.addEventListener("contextmenu", (e) => {
     e.preventDefault();
     const v = prompt("Session length (minutes):", state.timerMin || 25);
@@ -327,12 +700,34 @@
     } catch (e) {}
   }
 
-  paint();
+  document.getElementById("reset").addEventListener("click", () => {
+    state.targets = state.targets.filter(t => !t.done);
+    save(); render();
+  });
+
+  document.getElementById("wipe").addEventListener("click", () => {
+    state.intention = "";
+    state.targets = [{ text: "", done: false }];
+    intentionEl.value = "";
+    autoGrow(intentionEl);
+    save(); render();
+    intentionEl.focus();
+  });
 
   // ---- init ----
+  if (!state.seeded) {
+    state.jogGroups = SEED_GROUPS;
+    state.seeded = true;
+    state.tab = "jog";
+    save();
+  }
   if (state.targets.length === 0) state.targets.push({ text: "", done: false });
+  autoGrow(intentionEl);
+  paint();
   render();
-  if (!state.intention) intentionEl.focus();
+  renderJog();
+  setTab(state.tab || "session");
+  if (state.tab === "session" && !state.intention) intentionEl.focus();
 </script>
 </body>
 </html>
