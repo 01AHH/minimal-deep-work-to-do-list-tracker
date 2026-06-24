@@ -605,7 +605,6 @@
       li.appendChild(tdot);
       li.appendChild(ta);
       tasks.appendChild(li);
-      autoGrow(ta);
     });
     wrap.appendChild(tasks);
 
@@ -615,8 +614,12 @@
     addBtn.addEventListener("click", () => addTask(gi, pi));
     wrap.appendChild(addBtn);
 
-    // grow textareas once attached
-    requestAnimationFrame(() => { autoGrow(name); if (note.value) autoGrow(note); });
+    // grow textareas once attached to the document (scrollHeight is 0 while detached)
+    requestAnimationFrame(() => {
+      autoGrow(name);
+      if (note.value) autoGrow(note);
+      wrap.querySelectorAll(".tasks .text").forEach(autoGrow);
+    });
     return wrap;
   }
 
