@@ -1,6 +1,60 @@
 import Cocoa
 import WebKit
 
+// Invisible views that let the user drag the window. The WKWebView covers the
+// whole window and swallows every mouse-down, so without these a borderless
+// window has no grab area at all.
+// Drags explicitly rather than relying on mouseDownCanMoveWindow alone, which
+// newer macOS ignores when a WKWebView sits underneath.
+class DragView: NSView {
+    override var mouseDownCanMoveWindow: Bool { true }
+    override func acceptsFirstMouse(for event: NSEvent?) -> Bool { true }
+
+    override func mouseDown(with event: NSEvent) {
+        // Double-click behaves like a normal title bar (zoom / minimise per system setting).
+        if event.clickCount == 2 {
+            window?.performZoom(nil)
+            return
+        }
+        window?.performDrag(with: event)
+    }
+}
+
+// Holds the web view plus the drag areas: a strip across the top and the empty
+// gutters either side of the 600pt content column. Laid out by hand because the
+// gutters grow and shrink with the window rather than scaling with it.
+class DragContainer: NSView {
+    static let topStrip: CGFloat = 52
+    private let columnWidth: CGFloat = 600
+
+    let webView: WKWebView
+    private let topDrag = DragView()
+    private let leftDrag = DragView()
+    private let rightDrag = DragView()
+
+    init(webView: WKWebView) {
+        self.webView = webView
+        super.init(frame: .zero)
+        webView.autoresizingMask = [.width, .height]
+        addSubview(webView)
+        // Above the web view so they see the mouse-down first.
+        for v in [topDrag, leftDrag, rightDrag] { addSubview(v) }
+    }
+
+    required init?(coder: NSCoder) { fatalError("not used") }
+
+    override func layout() {
+        super.layout()
+        webView.frame = bounds
+        let w = bounds.width, h = bounds.height
+        topDrag.frame = NSRect(x: 0, y: h - Self.topStrip, width: w, height: Self.topStrip)
+        let gutter = max(0, (w - columnWidth) / 2)
+        let below = h - Self.topStrip
+        leftDrag.frame = NSRect(x: 0, y: 0, width: gutter, height: below)
+        rightDrag.frame = NSRect(x: w - gutter, y: 0, width: gutter, height: below)
+    }
+}
+
 class AppDelegate: NSObject, NSApplicationDelegate, WKNavigationDelegate {
     var window: NSWindow!
     var webView: WKWebView!
@@ -28,7 +82,11 @@ class AppDelegate: NSObject, NSApplicationDelegate, WKNavigationDelegate {
         webView.navigationDelegate = self
         webView.setValue(false, forKey: "drawsBackground") // let cream show through
         webView.allowsBackForwardNavigationGestures = false
-        window.contentView = webView
+
+        let container = DragContainer(webView: webView)
+        container.frame = rect
+        container.autoresizingMask = [.width, .height]
+        window.contentView = container
 
         // Load the bundled HTML, granting read access to Resources (for fonts)
         if let res = Bundle.main.resourceURL {
@@ -75,7 +133,8 @@ editMenuItem.submenu = editMenu
 let viewMenuItem = NSMenuItem()
 menu.addItem(viewMenuItem)
 let viewMenu = NSMenu(title: "View")
-viewMenu.addItem(withTitle: "Enter Full Screen", action: #selector(NSWindow.toggleFullScreen(_:)), keyEquivalent: "f")
+let fullScreenItem = viewMenu.addItem(withTitle: "Enter Full Screen", action: #selector(NSWindow.toggleFullScreen(_:)), keyEquivalent: "f")
+fullScreenItem.keyEquivalentModifierMask = [.control, .command]
 viewMenuItem.submenu = viewMenu
 
 let windowMenuItem = NSMenuItem()
